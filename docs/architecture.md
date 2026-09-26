@@ -1348,9 +1348,9 @@ application-core, client, and remote-transfer boundaries together.
 
 ## REST server (`server/`)
 
-The single-tenant REST server is the third adapter (ADR-0021), opt-in behind the
+The local REST server is the third adapter (ADR-0021), opt-in behind the
 `server` extra and **experimental**. A FastAPI app maps `/v1` routes onto the
-`_app/` cores and the public client namespaces, with one `NotebookLMClient` opened
+`_app/` cores and the public client namespaces, with one `NotebookLMClient` per configured profile opened
 once at the ASGI lifespan inside the server loop (honoring the ADR-0004 loop-
 affinity contract). Every `/v1` request requires a static bearer token
 (constant-time compare) plus a loopback `Host` literal (a DNS-rebinding guard);
@@ -1411,9 +1411,11 @@ adapter surface unless its manifest or route inventory changes.
 
 ### Hosting and persistence limits
 
-Both servers operate one selected NotebookLM account per process. They are single-tenant adapters,
-not multi-user credential routers. Restarting the process replaces the lifespan-owned client and
-loses ephemeral state.
+MCP operates one selected NotebookLM profile per process. REST defaults to the same model,
+with optional static Android profiles selected by an explicit request header. Each REST profile
+owns its client, recovery state, and pending registry; route-group capacity is shared across the
+process. The server token authorizes all configured profiles, so this is not per-user authorization.
+Restarting a process replaces its lifespan-owned clients and loses ephemeral state.
 
 MCP detached chat tasks are process-owned, bounded, and time-limited. `chat_start` keeps work alive
 past one transport request and `chat_status` reads the in-memory result, but a restart loses the
@@ -2121,6 +2123,7 @@ src/notebooklm/
 ├── _version_info.py             # version_string(): version + short git commit
 ├── _redact.py                   # Transport-neutral secret/home-path/file-link scrubber (redact(msg, max_length)); shared chokepoint under both mcp/_errors.py and server/_errors.py
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
+│   ├── android_profiles.py      # Cookie-free Android client construction for isolated profile adapters
 │   ├── __init__.py              # Re-exports the neutral primitives
 │   ├── client_config.py         # Explicit bound request-policy configuration for first-party client factories
 │   ├── artifacts.py             # Click-free artifact core: get/rename/delete/export + poll/wait/retry; kind-aware mind-map dispatch (mind_maps.list for rename, notes.list_mind_maps for delete), get_artifact raises ArtifactNotFoundError, typed Rename/Export results + ArtifactStatusView/status_view neutral status DTO (CLI builds every --json envelope from the typed fields)
@@ -2631,8 +2634,10 @@ src/notebooklm/
 └── server/                      # Single-tenant REST API adapter (the third _app adapter, after cli/ and mcp/; behind the optional `server` extra). EXPERIMENTAL: /v1 surface may change, excluded from the api-compat gate. Imports no click/rich/cli.
     ├── __init__.py              # Re-exports create_app + SERVER_NAME; importing it without the `server` extra fails on the fastapi import
     ├── __main__.py              # `notebooklm-server` entry: argparse + NOTEBOOKLM_SERVER_* env defaults + loopback-bind guard + fail-closed token check
-    ├── app.py                   # create_app(*, client_factory=None) -> FastAPI; ASGI lifespan binds one client; public /healthz; auth-gated /v1 mount (docs/redoc/openapi disabled)
-    ├── _context.py              # AppState (lifespan-bound client + pending registry) + get_client / get_pending FastAPI dependencies
+    ├── app.py                   # create_app(...) -> FastAPI; lifespan binds one client per configured profile; public /healthz; authenticated /v1 mount (docs/redoc/openapi disabled)
+    ├── _context.py              # Per-profile AppState and ProfileRegistry + selected get_client / get_pending dependencies
+    ├── _profiles.py             # Profile header, configuration validation, and canonical storage-path uniqueness
+    ├── _profile_client.py       # Per-profile client owner isolates timed-out cleanup and prevents overlapping attempts
     ├── _limits.py               # Lifespan-owned REST route-group concurrency limiters for expensive source/chat/research/artifact work
     ├── _auth.py                 # Bearer-token (constant-time, 401) + loopback-Host (DNS-rebinding guard, 403) dependency for /v1
     ├── _errors.py               # ErrorCategory -> HTTP status table + _redact + the classify-once exception handler emitting {error:{category,message}}
