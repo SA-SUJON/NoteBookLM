@@ -245,6 +245,7 @@ class ArtifactGenerationService(RequestPolicyOwner):
         difficulty: QuizDifficulty | None = None,
         language: str | None = None,
         question_types: builtins.list[QuizQuestionType] | None = None,
+        include_images: bool | None = None,
     ) -> GenerationStatus:
         """Generate a quiz."""
         if source_ids is None:
@@ -258,6 +259,7 @@ class ArtifactGenerationService(RequestPolicyOwner):
             difficulty=difficulty,
             language=language,
             question_types=question_types,
+            include_images=include_images,
         )
         return await self._call_generate(
             notebook_id,
@@ -274,6 +276,7 @@ class ArtifactGenerationService(RequestPolicyOwner):
         quantity: QuizQuantity | None = None,
         difficulty: QuizDifficulty | None = None,
         language: str | None = None,
+        include_images: bool | None = None,
     ) -> GenerationStatus:
         """Generate flashcards."""
         if source_ids is None:
@@ -286,6 +289,7 @@ class ArtifactGenerationService(RequestPolicyOwner):
             quantity=quantity,
             difficulty=difficulty,
             language=language,
+            include_images=include_images,
         )
         return await self._call_generate(
             notebook_id,
